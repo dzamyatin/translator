@@ -3,4 +3,4 @@ build:
 up:
 	docker-compose up
 down:
-	docker-compose up
+	docker-compose down
