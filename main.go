@@ -100,6 +100,10 @@ func (h Handler) process(toTranslate map[string]string) map[string]string {
 					}
 					fmt.Printf("el:%v |%v|%v|\n", i.Add(1), in.k, res)
 
+					if !h.isValid(in.v, res) {
+						break
+					}
+
 					chOut <- kv{in.k, res}
 				}
 			}
