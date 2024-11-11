@@ -6,6 +6,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os/exec"
+	"strings"
 )
 
 type ITranslator interface {
@@ -15,8 +17,26 @@ type ITranslator interface {
 type Translator struct{}
 
 func (t Translator) translate(word string) (string, error) {
+	cmd := exec.Command(
+		"trans",
+		"en:ru",
+		"-no-view",
+		"-j",
+		"-show-alternatives",
+		"n",
+		"-show-dictionary",
+		"n",
+		"-b",
+		"-no-pager",
+		word,
+	)
 
-	return word, nil
+	pipe, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimRight(string(pipe), "\n"), nil
 }
 
 type Handler struct {
@@ -32,12 +52,13 @@ func (h Handler) process(toTranslate map[string]string) map[string]string {
 	for k, v := range toTranslate {
 		res, err := h.translator.translate(v)
 		if err != nil {
+			fmt.Println(err)
 			continue
 		}
 		translated[k] = res
 	}
 
-	return toTranslate
+	return translated
 }
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var toTranslate map[string]string
