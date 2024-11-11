@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io"
 	"log"
 	"net/http"
 	"os/exec"
 	"strings"
+	"translator/internal"
 )
 
 var failedExecutable = errors.New("Command failed")
@@ -51,27 +51,7 @@ func (t Translator) translate(word string) (string, error) {
 }
 
 type IBodyConverter interface {
-	convertBody(translated map[string]string) ([]byte, error)
-}
-
-type jsonBodyConverter struct{}
-
-func (bc jsonBodyConverter) convertBody(translated map[string]string) ([]byte, error) {
-	result, err := json.Marshal(translated)
-	if err != nil {
-		return result, err
-	}
-	return result, nil
-}
-
-type ymlBodyConverter struct{}
-
-func (bc ymlBodyConverter) convertBody(translated map[string]string) ([]byte, error) {
-	result, err := yaml.Marshal(translated)
-	if err != nil {
-		return result, err
-	}
-	return result, nil
+	ConvertBody(translated map[string]string) ([]byte, error)
 }
 
 type Handler struct {
@@ -82,8 +62,8 @@ type Handler struct {
 func NewHandler() Handler {
 	return Handler{
 		Translator{},
-		//jsonBodyConverter{},
-		ymlBodyConverter{},
+		internal.PimTranslatorBodyConvertor{},
+		//internal.YmlBodyConverter{},
 	}
 }
 func (h Handler) process(toTranslate map[string]string) map[string]string {
@@ -147,7 +127,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	translated = h.process(toTranslate)
 
-	result, err := h.bodyConverter.convertBody(translated)
+	result, err := h.bodyConverter.ConvertBody(translated)
 
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
