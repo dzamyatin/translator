@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"translator/internal"
 )
 
@@ -66,27 +68,61 @@ func NewHandler() Handler {
 		//internal.YmlBodyConverter{},
 	}
 }
+
+type kv struct {
+	k, v string
+}
+
 func (h Handler) process(toTranslate map[string]string) map[string]string {
 	translated := make(map[string]string)
-	var i int
 
-	fmt.Printf("Found: %v", len(toTranslate))
-	for k, v := range toTranslate {
-		i++
+	chIn := make(chan kv)
+	chOut := make(chan kv)
 
-		res, err := h.translator.translate(v)
-		if err != nil {
-			fmt.Println(err)
-			continue
-		}
-		fmt.Printf("el:%v |%v|%v|\n", i, v, res)
+	wg := &sync.WaitGroup{}
+	i := atomic.Int64{}
+	for k := 0; k < 30; k++ {
+		wg.Add(1)
+		go func() {
+			for {
+				select {
+				case in, ok := <-chIn:
 
-		if !h.isValid(v, res) {
-			continue
-		}
+					if !ok {
+						wg.Done()
+						return
+					}
 
-		translated[k] = res
+					res, err := h.translator.translate(in.v)
+					if err != nil {
+						fmt.Println(err)
+						break
+					}
+					fmt.Printf("el:%v |%v|%v|\n", i.Add(1), in.k, res)
+
+					chOut <- kv{in.k, res}
+				}
+			}
+		}()
 	}
+
+	wg2 := sync.WaitGroup{}
+	wg2.Add(1)
+	go func() {
+		for v := range chOut {
+			translated[v.k] = v.v
+		}
+		wg2.Done()
+	}()
+
+	for k, v := range toTranslate {
+		chIn <- kv{k, v}
+	}
+
+	close(chIn)
+	wg.Wait()
+	close(chOut)
+	wg2.Wait()
 
 	return translated
 }
