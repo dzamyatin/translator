@@ -2,13 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"gopkg.in/yaml.v2"
 	"io"
 	"log"
 	"net/http"
 	"os/exec"
 	"strings"
 )
+
+var failedExecutable = errors.New("Command failed")
 
 type ITranslator interface {
 	translate(string) (string, error)
@@ -31,35 +35,95 @@ func (t Translator) translate(word string) (string, error) {
 		word,
 	)
 
+	errPipe, _ := cmd.StderrPipe()
+
 	pipe, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
 
+	if !cmd.ProcessState.Success() {
+		fmt.Printf("ERROR: Cant execute: %v by: %v", word, errPipe)
+		return "", failedExecutable
+	}
+
 	return strings.TrimRight(string(pipe), "\n"), nil
 }
 
+type IBodyConverter interface {
+	convertBody(translated map[string]string) ([]byte, error)
+}
+
+type jsonBodyConverter struct{}
+
+func (bc jsonBodyConverter) convertBody(translated map[string]string) ([]byte, error) {
+	result, err := json.Marshal(translated)
+	if err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+type ymlBodyConverter struct{}
+
+func (bc ymlBodyConverter) convertBody(translated map[string]string) ([]byte, error) {
+	result, err := yaml.Marshal(translated)
+	if err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
 type Handler struct {
-	translator ITranslator
+	translator    ITranslator
+	bodyConverter IBodyConverter
 }
 
 func NewHandler() Handler {
-	return Handler{Translator{}}
+	return Handler{
+		Translator{},
+		//jsonBodyConverter{},
+		ymlBodyConverter{},
+	}
 }
 func (h Handler) process(toTranslate map[string]string) map[string]string {
 	translated := make(map[string]string)
+	var i int
 
+	fmt.Printf("Found: %v", len(toTranslate))
 	for k, v := range toTranslate {
+		i++
+
 		res, err := h.translator.translate(v)
 		if err != nil {
 			fmt.Println(err)
 			continue
 		}
+		fmt.Printf("el:%v |%v|%v|\n", i, v, res)
+
+		if !h.isValid(v, res) {
+			continue
+		}
+
 		translated[k] = res
 	}
 
 	return translated
 }
+func (h Handler) isValid(v string, res string) bool {
+	if res == v {
+		fmt.Println("Not changed")
+		return false
+	}
+
+	if res == "" {
+		fmt.Println("Empty")
+		return false
+	}
+
+	return true
+}
+
 func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var toTranslate map[string]string
 	var translated map[string]string
@@ -83,7 +147,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	translated = h.process(toTranslate)
 
-	result, err := json.Marshal(translated)
+	result, err := h.bodyConverter.convertBody(translated)
 
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
