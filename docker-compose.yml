@@ -1,0 +1,10 @@
+services:
+  api:
+    build:
+      dockerfile: Dockerfile
+      context: ./
+    ports:
+      - "9128:8080"
+    volumes:
+      - ./:/app
+#    command: 'while true; echo 1; sleep 1; done'
