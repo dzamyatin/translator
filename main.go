@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 	"translator/internal"
 )
 
@@ -23,7 +25,11 @@ type ITranslator interface {
 type Translator struct{}
 
 func (t Translator) translate(word string) (string, error) {
-	cmd := exec.Command(
+	ctx, cancel := context.WithCancel(context.Background())
+	//ctx := context.Background()
+	//
+	cmd := exec.CommandContext(
+		ctx,
 		"trans",
 		"en:ru",
 		"-no-view",
@@ -37,9 +43,41 @@ func (t Translator) translate(word string) (string, error) {
 		word,
 	)
 
-	errPipe, _ := cmd.StderrPipe()
+	//cmd := exec.Command(
+	//	"trans",
+	//	"en:ru",
+	//	"-no-view",
+	//	"-j",
+	//	"-show-alternatives",
+	//	"n",
+	//	"-show-dictionary",
+	//	"n",
+	//	"-b",
+	//	"-no-pager",
+	//	word,
+	//)
 
+	cmd.WaitDelay = 2 * time.Second
+
+	timer := time.NewTimer(3 * time.Second)
+	go func() {
+		select {
+		case <-timer.C:
+			log.Println("TIMEOUT")
+			err := cmd.Cancel()
+			if err != nil {
+				log.Println(err)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}()
+
+	errPipe, _ := cmd.StderrPipe()
 	pipe, err := cmd.Output()
+
+	cancel()
+
 	if err != nil {
 		return "", err
 	}
